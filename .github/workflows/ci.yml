@@ -1,0 +1,19 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  mock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: fixture tests
+        run: bash tests/run.sh
+      - name: bats (if installed)
+        run: |
+          if command -v bats >/dev/null; then
+            bats tests/detect.bats tests/plan.bats
+          else
+            echo "bats not installed; tests/run.sh is the gate"
+          fi

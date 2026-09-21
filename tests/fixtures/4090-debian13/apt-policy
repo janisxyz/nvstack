@@ -1,0 +1,30 @@
+nvidia-driver:
+  Installed: (none)
+  Candidate: 550.163.01-2
+  Version table:
+     550.163.01-2 500
+        500 http://deb.debian.org/debian trixie/non-free amd64 Packages
+nvidia-driver-cuda:
+  Installed: (none)
+  Candidate: 550.163.01-2
+  Version table:
+     550.163.01-2 500
+        500 http://deb.debian.org/debian trixie/non-free amd64 Packages
+nvidia-open-kernel-dkms:
+  Installed: (none)
+  Candidate: 550.163.01-2
+nvidia-kernel-dkms:
+  Installed: (none)
+  Candidate: 550.163.01-2
+nvidia-persistenced:
+  Installed: (none)
+  Candidate: 550.163.01-2
+firmware-misc-nonfree:
+  Installed: (none)
+  Candidate: 20250410-2
+linux-headers-6.12.0-1-amd64:
+  Installed: 6.12.0-1
+  Candidate: 6.12.0-1
+nvidia-driver-libs:
+  Installed: (none)
+  Candidate: 550.163.01-2

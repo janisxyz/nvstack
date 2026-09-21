@@ -1,0 +1,4 @@
+NVIDIA-SMI has failed because it couldn't communicate with the NVIDIA driver. Make sure that the latest NVIDIA driver is installed and running.
+Failed to initialize NVML: Driver/library version mismatch
+NVML library version: 560.35
+NVIDIA driver version: 615.71

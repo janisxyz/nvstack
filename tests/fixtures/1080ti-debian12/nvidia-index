@@ -1,0 +1,7 @@
+nvidia-open 615.71.09-2
+nvidia-driver-cuda 615.71.09-2 nvidia-cuda-mps, nvidia-smi
+nvidia-smi 615.71.09-2
+nvidia-persistenced 615.71.09-2
+nvidia-kernel-open-dkms 615.71.09-2
+nvidia-driver 615.71.09-2
+cuda-drivers 615.71.09-2

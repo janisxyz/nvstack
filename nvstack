@@ -1,0 +1,332 @@
+#!/usr/bin/env bash
+# nvstack — one coherent NVIDIA GPU driver stack for Linux.
+# Default is dry-run unless --yes.
+set -euo pipefail
+
+NVSTACK_VERSION="0.1.0"
+NVSTACK_GITHUB="${NVSTACK_GITHUB:-https://github.com/janisxyz/nvstack}"
+NVSTACK_REF="${NVSTACK_REF:-main}"
+
+_nvstack_is_piped() {
+  # curl | bash → BASH_SOURCE is empty or /dev/fd/*
+  local src="${BASH_SOURCE[0]:-}"
+  [[ -z "$src" ]] && return 0
+  [[ "$src" == /dev/fd/* || "$src" == /proc/self/fd/* ]] && return 0
+  return 1
+}
+
+_nvstack_find_root() {
+  if [[ -n "${NVSTACK_ROOT:-}" && -f "${NVSTACK_ROOT}/lib/common.sh" ]]; then
+    printf '%s\n' "$NVSTACK_ROOT"
+    return 0
+  fi
+  local src="${BASH_SOURCE[0]:-}"
+  if [[ -n "$src" && -f "$src" ]]; then
+    local dir
+    dir="$(cd "$(dirname "$src")" && pwd)"
+    if [[ -f "$dir/lib/common.sh" ]]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+_nvstack_bootstrap() {
+  local tmp
+  tmp="$(mktemp -d /tmp/nvstack.XXXXXX)"
+  echo "nvstack: fetching ${NVSTACK_GITHUB} (${NVSTACK_REF}) into ${tmp}" >&2
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "${NVSTACK_GITHUB}/archive/refs/heads/${NVSTACK_REF}.tar.gz" | tar -xz -C "$tmp" --strip-components=1
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- "${NVSTACK_GITHUB}/archive/refs/heads/${NVSTACK_REF}.tar.gz" | tar -xz -C "$tmp" --strip-components=1
+  else
+    echo "nvstack: need curl or wget to bootstrap libraries" >&2
+    exit 1
+  fi
+  if [[ ! -f "$tmp/lib/common.sh" ]]; then
+    echo "nvstack: bootstrap failed (lib/common.sh missing)" >&2
+    exit 1
+  fi
+  printf '%s\n' "$tmp"
+}
+
+if ! NVSTACK_ROOT="$(_nvstack_find_root)"; then
+  NVSTACK_ROOT="$(_nvstack_bootstrap)"
+  NVSTACK_BOOTSTRAPPED=1
+fi
+export NVSTACK_ROOT
+
+# shellcheck source=lib/common.sh
+source "${NVSTACK_ROOT}/lib/common.sh"
+source "${NVSTACK_ROOT}/lib/pkg.sh"
+source "${NVSTACK_ROOT}/lib/detect.sh"
+source "${NVSTACK_ROOT}/lib/profiles.sh"
+source "${NVSTACK_ROOT}/lib/nvidia-repo.sh"
+source "${NVSTACK_ROOT}/lib/debian.sh"
+source "${NVSTACK_ROOT}/lib/ubuntu.sh"
+source "${NVSTACK_ROOT}/lib/fedora.sh"
+source "${NVSTACK_ROOT}/lib/arch.sh"
+source "${NVSTACK_ROOT}/lib/repair.sh"
+
+usage() {
+  cat <<EOF
+nvstack ${NVSTACK_VERSION} — NVIDIA GPU driver stack installer + verifier
+
+USAGE
+  nvstack detect [--mock DIR] [--json]
+  nvstack plan --profile gaming|ai|gen|compute [--extras docker] [--mock DIR]
+  nvstack install --profile gaming|ai|gen|compute [--extras docker] [--yes] [--dry-run] [--mock DIR]
+  nvstack repair [--yes] [--dry-run] [--mock DIR]
+  nvstack status [--mock DIR]
+  nvstack uninstall --nouveau [--yes] [--dry-run]
+  nvstack version
+
+BEHAVIOR
+  Default is dry-run unless --yes.
+  plan prints exact packages and the reboot requirement.
+  install/repair/uninstall require root.
+  Logs to /var/log/nvstack.log (or ~/.nvstack.log).
+
+SOURCE POLICY
+  Pick ONE source: distro packages OR the NVIDIA CUDA network repo. Never both.
+  If nvidia-driver-cuda Conflicts: nvidia-smi — do not install standalone nvidia-smi.
+
+THE FAILURE THIS TOOL EXISTS TO PREVENT
+  nvidia-container-cli: nvml error: driver/library version mismatch
+  nvidia-driver-cuda Conflicts: nvidia-smi
+
+CLONE
+  curl -fsSL ${NVSTACK_RAW}/${NVSTACK_REF}/nvstack | sudo bash -s -- plan --profile ai
+  git clone ${NVSTACK_GITHUB}.git && sudo ./nvstack install --profile ai --yes
+EOF
+}
+
+CMD=""
+NVSTACK_YES="${NVSTACK_YES:-0}"
+NVSTACK_DRY_RUN="${NVSTACK_DRY_RUN:-1}"
+NVSTACK_JSON=0
+NVSTACK_EXTRAS=""
+NVSTACK_PROFILE=""
+NVSTACK_UNINSTALL_NOUVEAU=0
+EXPLICIT_DRY=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    detect|plan|install|repair|status|uninstall|version|help|-h|--help)
+      CMD="$1"
+      shift
+      ;;
+    --profile)
+      NVSTACK_PROFILE="${2:-}"
+      shift 2
+      ;;
+    --profile=*)
+      NVSTACK_PROFILE="${1#*=}"
+      shift
+      ;;
+    --extras)
+      NVSTACK_EXTRAS="${2:-}"
+      shift 2
+      ;;
+    --extras=*)
+      NVSTACK_EXTRAS="${1#*=}"
+      shift
+      ;;
+    --yes|-y)
+      NVSTACK_YES=1
+      NVSTACK_DRY_RUN=0
+      shift
+      ;;
+    --dry-run)
+      NVSTACK_DRY_RUN=1
+      EXPLICIT_DRY=1
+      shift
+      ;;
+    --mock)
+      NVSTACK_MOCK="${2:-}"
+      export NVSTACK_MOCK
+      shift 2
+      ;;
+    --mock=*)
+      NVSTACK_MOCK="${1#*=}"
+      export NVSTACK_MOCK
+      shift
+      ;;
+    --json)
+      NVSTACK_JSON=1
+      shift
+      ;;
+    --nouveau)
+      NVSTACK_UNINSTALL_NOUVEAU=1
+      shift
+      ;;
+    --version)
+      CMD="version"
+      shift
+      ;;
+    *)
+      nv_err "unknown argument: $1"
+      usage
+      exit 2
+      ;;
+  esac
+done
+
+# --dry-run wins if both passed
+if [[ $EXPLICIT_DRY -eq 1 ]]; then
+  NVSTACK_DRY_RUN=1
+fi
+export NVSTACK_YES NVSTACK_DRY_RUN NVSTACK_EXTRAS NVSTACK_PROFILE NVSTACK_JSON
+
+if [[ -z "$CMD" || "$CMD" == "help" || "$CMD" == "-h" || "$CMD" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ "$CMD" == "version" ]]; then
+  echo "nvstack ${NVSTACK_VERSION}"
+  exit 0
+fi
+
+if [[ -n "${NVSTACK_MOCK:-}" && ! -d "${NVSTACK_MOCK}" ]]; then
+  # allow relative mock paths from CWD and from repo tests/
+  if [[ -d "${NVSTACK_ROOT}/${NVSTACK_MOCK}" ]]; then
+    NVSTACK_MOCK="${NVSTACK_ROOT}/${NVSTACK_MOCK}"
+  elif [[ -d "${NVSTACK_ROOT}/tests/fixtures/${NVSTACK_MOCK}" ]]; then
+    NVSTACK_MOCK="${NVSTACK_ROOT}/tests/fixtures/${NVSTACK_MOCK}"
+  else
+    nv_die "mock dir not found: ${NVSTACK_MOCK}" 2
+  fi
+  export NVSTACK_MOCK
+fi
+
+NVSTACK_STATE_DIR="$(mktemp -d /tmp/nvstack-state.XXXXXX)"
+export NVSTACK_STATE_DIR
+NVSTACK_DETECT_JSON="${NVSTACK_STATE_DIR}/detect.json"
+export NVSTACK_DETECT_JSON
+trap 'rm -rf "${NVSTACK_STATE_DIR}"' EXIT
+
+nv_detect_to_file "${NVSTACK_DETECT_JSON}"
+
+_nv_dispatch_plan() {
+  local family support
+  family="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["distro"]["family"])' "${NVSTACK_DETECT_JSON}")"
+  support="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["distro"]["support"])' "${NVSTACK_DETECT_JSON}")"
+  case "$family" in
+    debian) debian_plan ;;
+    ubuntu) ubuntu_plan ;;
+    fedora) fedora_plan ;;
+    arch) arch_plan ;;
+    *)
+      nv_err "unknown distro family=${family} support=${support}"
+      nv_err "nvstack first-class: Debian 12/13, Ubuntu 22.04/24.04/26.04. best-effort: Fedora, Arch."
+      cat >&2 <<'EOF'
+Exact starting commands by family:
+  Debian:  sudo nvstack install --profile ai --yes
+  Ubuntu:  sudo nvstack install --profile ai --yes
+  Fedora:  see `nvstack plan` on a Fedora box (prints dnf lines)
+  Arch:    see `nvstack plan` on an Arch box (prints pacman lines)
+EOF
+      exit 2
+      ;;
+  esac
+}
+
+_nv_dispatch_install() {
+  local family
+  family="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["distro"]["family"])' "${NVSTACK_DETECT_JSON}")"
+  case "$family" in
+    debian)
+      debian_plan
+      debian_install
+      ;;
+    ubuntu)
+      ubuntu_plan
+      ubuntu_install
+      ;;
+    fedora) fedora_install ;;
+    arch) arch_install ;;
+    *)
+      nv_err "unknown distro — printing commands, exit 2"
+      exit 2
+      ;;
+  esac
+}
+
+case "$CMD" in
+  detect)
+    if [[ "${NVSTACK_JSON}" -eq 1 ]]; then
+      cat "${NVSTACK_DETECT_JSON}"
+    else
+      nv_print_banner
+      nv_detect_print_human "${NVSTACK_DETECT_JSON}"
+      nv_warn_legacy_gpu "${NVSTACK_DETECT_JSON}" >&2 || true
+      local_sb="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["secure_boot"].get("enabled"))' "${NVSTACK_DETECT_JSON}")"
+      if [[ "$local_sb" == "True" ]]; then
+        nv_warn "Secure Boot is enabled. Unsigned DKMS modules will black-screen unless a MOK is enrolled."
+        nv_warn "nvstack will NOT silently disable Secure Boot."
+      fi
+      fam="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["distro"]["support"])' "${NVSTACK_DETECT_JSON}")"
+      if [[ "$fam" == "unknown" ]]; then
+        nv_err "unknown distro. print exact commands and exit 2."
+        cat >&2 <<'EOF'
+Install on Debian 12/13:
+  sudo nvstack install --profile ai --yes
+Install on Ubuntu 22.04/24.04/26.04:
+  sudo nvstack install --profile ai --yes
+EOF
+        exit 2
+      fi
+    fi
+    ;;
+  plan)
+    nv_validate_profile
+    nv_print_banner
+    nv_profile_blurb
+    nv_detect_print_human "${NVSTACK_DETECT_JSON}"
+    nv_warn_legacy_gpu "${NVSTACK_DETECT_JSON}" >&2 || true
+    _nv_dispatch_plan
+    ;;
+  install)
+    nv_validate_profile
+    if [[ -z "${NVSTACK_MOCK:-}" ]]; then
+      nv_require_root
+    fi
+    nv_print_banner
+    # Idempotent: healthy stack + packages already present → exit 0
+    if [[ -z "${NVSTACK_MOCK:-}" ]] && nvidia_host_smi_ok; then
+      nv_ok "nvidia-smi already works. second install on a healthy stack exits 0."
+      if [[ "${NVSTACK_EXTRAS}" == *docker* ]]; then
+        nvidia_extras_docker_install || true
+      fi
+      exit 0
+    fi
+    _nv_dispatch_install
+    if [[ "${NVSTACK_EXTRAS}" == *docker* ]]; then
+      nvidia_extras_docker_install || true
+    fi
+    ;;
+  repair)
+    if [[ -z "${NVSTACK_MOCK:-}" ]]; then
+      nv_require_root
+    fi
+    nv_repair
+    ;;
+  status)
+    nv_status
+    ;;
+  uninstall)
+    if [[ "${NVSTACK_UNINSTALL_NOUVEAU}" -ne 1 ]]; then
+      nv_die "refusing uninstall without --nouveau (this restores the nouveau driver)" 2
+    fi
+    if [[ -z "${NVSTACK_MOCK:-}" ]]; then
+      nv_require_root
+    fi
+    nv_uninstall_nouveau
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac

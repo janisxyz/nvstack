@@ -1,0 +1,24 @@
+nvidia-driver:
+  Installed: (none)
+  Candidate: 535.309.01-0+deb12u1
+  Version table:
+     535.309.01-0+deb12u1 500
+        500 http://deb.debian.org/debian bookworm/non-free amd64 Packages
+nvidia-driver-cuda:
+  Installed: (none)
+  Candidate: 535.309.01-0+deb12u1
+nvidia-kernel-dkms:
+  Installed: (none)
+  Candidate: 535.309.01-0+deb12u1
+nvidia-persistenced:
+  Installed: (none)
+  Candidate: 535.309.01-0+deb12u1
+firmware-misc-nonfree:
+  Installed: (none)
+  Candidate: 20230210-5
+linux-headers-6.1.0-28-amd64:
+  Installed: 6.1.0-28
+  Candidate: 6.1.0-28
+nvidia-driver-libs:
+  Installed: (none)
+  Candidate: 535.309.01-0+deb12u1

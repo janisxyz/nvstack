@@ -1,0 +1,4 @@
+Detected GPUs: NVIDIA GeForce RTX 4090 - (pci_id 0x2684)
+Detected system: Debian 13
+Please copy and paste the following command to install the open kernel module flavour:
+sudo apt install -y nvidia-open

@@ -1,0 +1,2 @@
+deb http://deb.debian.org/debian trixie main contrib non-free non-free-firmware
+deb [signed-by=/usr/share/keyrings/cuda-archive-keyring.gpg] https://developer.download.nvidia.com/compute/cuda/repos/debian13/x86_64/ /

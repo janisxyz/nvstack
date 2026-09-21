@@ -1,0 +1,4 @@
+Detected GPUs: NVIDIA GeForce RTX 5090 - (pci_id 0x2b85)
+Detected system: Ubuntu 24.04
+Please copy and paste the following command to install the open kernel module flavour:
+sudo apt install -y nvidia-open
